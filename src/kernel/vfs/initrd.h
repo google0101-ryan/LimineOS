@@ -2,7 +2,7 @@
 
 #include <kernel/vfs/vfs.h>
 
-class Initrd //: public Filesystem
+class Initrd : public Filesystem
 {
 private:
     // We support a max of 256 open files
@@ -36,10 +36,10 @@ private:
 public:
     Initrd();
 
-    // virtual int open(const char* name);
-    // virtual void close(int fd);
-    // virtual int write(int, char*, size_t) {return -1;}
-    // virtual int read(int fd, char* buf, size_t size);
-    // virtual int seek(int fd, int seek_dir, size_t off);
-    // virtual size_t tell(int fd);
+    virtual int open(const char* name);
+    virtual void close(int fd);
+    virtual int write(int, char*, size_t) {return -1;}
+    virtual int read(int fd, char* buf, size_t size);
+    virtual int seek(int fd, int seek_dir, size_t off);
+    virtual size_t tell(int fd);
 };

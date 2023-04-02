@@ -21,6 +21,8 @@ void KThread()
 {
 	Terminal::SetScreenColors(0xFFFFFFFF, 0x00000000);
 
+	Terminal::ClearScreen();
+
 	printf("Entered kernel thread\n");
 
 	VFS::Init();
@@ -28,6 +30,16 @@ void KThread()
 	printf("Initialized VFS\n");
 
 	Initrd* initrd = new Initrd();
+
+	vfs->mount(initrd, "/");
+
+	int fd = vfs->open("/kernel.elf");
+
+	if (fd < 0)
+	{
+		printf("ERROR: Couldn't open /kernel.elf\n");
+		Arch::Halt();
+	}
 
 	Arch::Halt();
 }

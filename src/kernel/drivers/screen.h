@@ -20,6 +20,8 @@ void SetXY(int x, int y);
 
 void GetWidthHeight(int& w, int& h);
 
+void ClearScreen();
+
 }
 
 #define printf Terminal::printf

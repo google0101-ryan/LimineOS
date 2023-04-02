@@ -6,6 +6,10 @@
 #include "ssfn.h"
 #include "printf.h"
 
+#include <arch/x86/util/ports.h>
+
+#define PORT 0x3f8
+
 extern unsigned char _binary_unifont_sfn_start;
 
 limine_framebuffer** framebuffers;
@@ -28,8 +32,16 @@ struct
 
 bool mouseDrawn;
 
+int is_transmit_empty()
+{
+	return inb(PORT + 5) & 0x20;
+}
+
 void putc(char c, void*)
 {
+	while (is_transmit_empty() == 0);
+
+	outb(PORT, c);
 	ssfn_putc(c);
 }
 
@@ -89,6 +101,20 @@ void Terminal::GetWidthHeight(int &w, int &h)
 	h = ssfn_dst.h;
 }
 
+void Terminal::ClearScreen()
+{
+	for (size_t y = 0; y < ssfn_dst.h; y++)
+	{
+		for (size_t x = 0; x < (ssfn_dst.w*4); x++)
+		{
+			uint8_t* addr = ssfn_dst.ptr + (y * ssfn_dst.p) + x;
+			*addr = 0;
+		}
+	}
+
+	ssfn_dst.x = ssfn_dst.y = 0;
+}
+
 void Terminal::Init(limine_framebuffer_response *term)
 {
 	mutex_init(&screen_mutex);
@@ -105,4 +131,13 @@ void Terminal::Init(limine_framebuffer_response *term)
 	ssfn_dst.p = main_fb->pitch;
 	ssfn_dst.x = ssfn_dst.y = pos.x = pos.y = 0;
 	ssfn_dst.fg = fgcolor;
+
+	outb(PORT + 1, 0x00);
+	outb(PORT + 3, 0x80);
+	outb(PORT + 0, 0x03);
+	outb(PORT + 1, 0x00);
+	outb(PORT + 3, 0x03);
+	outb(PORT + 2, 0xC7);
+	outb(PORT + 4, 0x0B);
+	outb(PORT + 4, 0x0F);
 }

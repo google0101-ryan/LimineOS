@@ -5,12 +5,17 @@
 #include <kernel/libk/list.h>
 #include <kernel/libk/hashmap.h>
 
+#define SEEK_SET 0
+#define SEEK_END 1
+#define SEEK_CUR 2
+
 class Filesystem
 {
+	friend class VFS;
 protected:
 	char name[128];
 public:
-	Filesystem();
+	Filesystem() {}
 
 	virtual int open(const char* name) = 0;
     virtual void close(int fd) = 0;

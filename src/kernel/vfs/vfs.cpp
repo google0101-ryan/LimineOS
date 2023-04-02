@@ -1,5 +1,6 @@
 #include "vfs.h"
 #include <kernel/libk/string.h>
+#include <kernel/drivers/screen.h>
 
 #define VFS_GET_INFO() \
 	Filesystem* mp = root_fs; \
@@ -13,6 +14,8 @@ void VFS::Init()
 void VFS::mount(Filesystem *fs, const char *mountpoint)
 {
 	mountpoints.push_back({mountpoint, fs});
+
+	printf("Mounted FS of type %s on %s\n", fs->name, mountpoint);
 }
 
 int VFS::open(const char *path)

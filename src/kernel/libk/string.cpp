@@ -33,3 +33,10 @@ size_t strlen(const char *a)
 		b++;
 	return b;
 }
+
+void strncpyz(char *dst, const char *src, size_t size)
+{
+    while (*src && size--)
+        *dst++ = *src++;
+    *dst++ = '\0';
+}
