@@ -42,7 +42,7 @@ void KThread()
 
 	if (res < 0)
 	{
-		printf("Unhandled result %d\n", res);
+		// printf("Unhandled result %d\n", res);
 		Arch::Halt();
 	}
 

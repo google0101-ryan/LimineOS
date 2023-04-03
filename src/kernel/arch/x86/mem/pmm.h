@@ -5,7 +5,7 @@
 #include <kernel/limine.h>
 
 #define __ALIGN_MASK(x, mask)    (((x) + (mask)) & ~(mask))
-#define ALIGN(x, a)            __ALIGN_MASK(x,(__typeof(x))(a) - 1)
+#define ALIGN(x, a)            __ALIGN_MASK(x,(__typeof__(x))(a) - 1)
 
 namespace PMM
 {

@@ -17,6 +17,9 @@
 // 0xffffa00000000000 - 0xffffffffaxxxxxxx - usermode code
 // 0xffffffff80000000 - 0xffffffff8xxxxxxx - Kernel, mapped based on the kernel file request
 
+extern "C" uint32_t _kernel_start;
+extern "C" uint32_t _kernel_end;
+
 static volatile limine_kernel_address_request addr_req = 
 {
 	.id = LIMINE_KERNEL_ADDRESS_REQUEST,
@@ -73,8 +76,13 @@ VirtualMemory::PageMapLevel4 *VirtualMemory::AllocateAddressSpace(uint64_t &stac
 		MapPage(pml4, i, i, flags::writeable | flags::present);
 		MapPage(pml4, i, hhdm_req.response->offset+i, flags::present | flags::writeable);
 	}
+	
 
-	for (uint64_t i = 0; i < file_req.response->kernel_file->size; i += 0x1000)
+	uintptr_t end = (uintptr_t)&_kernel_end;
+	uintptr_t start = (uintptr_t)&_kernel_start;
+	uintptr_t size = end - start;
+
+	for (uint64_t i = 0; i < size; i += 0x1000)
 		MapPage(pml4, addr_req.response->physical_base+i, addr_req.response->virtual_base+i, flags::writeable | flags::present);	
 
 	uint64_t stack_addr = ((uint64_t)PMM::AllocPage(ALIGN(stack_size, 0x1000) / 0x1000));
@@ -108,7 +116,11 @@ void VirtualMemory::Init(int cpunum)
 		MapPage(kernel_table, i, hhdm_req.response->offset+i, flags::present | flags::writeable);
 	}
 
-	for (uint64_t i = 0; i < file_req.response->kernel_file->size; i += 0x1000)
+	uintptr_t end = (uintptr_t)&_kernel_end;
+	uintptr_t start = (uintptr_t)&_kernel_start;
+	uintptr_t size = end - start;
+
+	for (uint64_t i = 0; i < size; i += 0x1000)
 		MapPage(kernel_table, addr_req.response->physical_base+i, addr_req.response->virtual_base+i, flags::writeable | flags::present);	
 
 	asm volatile("mov %0, %%cr3" :: "r"(kernel_table) : "memory");
