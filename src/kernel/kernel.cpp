@@ -10,6 +10,7 @@
 
 #include <kernel/vfs/vfs.h>
 #include <kernel/vfs/initrd.h>
+#include <kernel/vfs/rpc.h>
 
 static volatile limine_framebuffer_request fb_req =
 {
@@ -31,13 +32,17 @@ void KThread()
 
 	Initrd* initrd = new Initrd();
 
-	vfs->mount(initrd, "/");
+	vfs->mount(initrd, "/", true);
 
-	int fd = vfs->open("/kernel.elf");
+	RpcFilesystem* rpc = new RpcFilesystem();
 
-	if (fd < 0)
+	vfs->mount(rpc, "/rpc", false);
+
+	int res = vfs->LoadAndExec("/hello_world.elf");
+
+	if (res < 0)
 	{
-		printf("ERROR: Couldn't open /kernel.elf\n");
+		printf("Unhandled result %d\n", res);
 		Arch::Halt();
 	}
 

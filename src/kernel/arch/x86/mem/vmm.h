@@ -57,4 +57,7 @@ void MapPage(PageMapLevel4* pml4, uint64_t physaddr, uint64_t virtaddr, uint64_t
 // Create a basic userspace-thread page table, and return it
 PageMapLevel4* AllocateAddressSpace(uint64_t& stack, uint64_t stack_size);
 
+void SwitchPageMap(PageMapLevel4* pml4);
+void SwitchToPagemap(int cpunum);
+
 }

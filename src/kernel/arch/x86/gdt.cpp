@@ -1,4 +1,5 @@
 #include "gdt.h"
+#include "cpu.h"
 
 static constexpr uint8_t GDT_NULL = 0x00;
 static constexpr uint8_t GDT_CODE_64 = 0x08;
@@ -49,16 +50,25 @@ struct [[gnu::packed, gnu::aligned(0x1000)]] GDTable
     TSSEntry Tss;
 };
 
-struct [[gnu::packed]] TSS 
+typedef struct 
 {
-	uint32_t reserved0;
-	uint64_t rsp[3];
-	uint64_t reserved1;
-	uint64_t ist[7];
-	uint64_t reserved2;
-	uint16_t reserved3;
-	uint16_t iopb;
-};
+    uint32_t reserved __attribute__((aligned(16)));
+    uint64_t rsp0;
+    uint64_t rsp1;
+    uint64_t rsp2;
+    uint64_t reserved2;
+    uint64_t ist1;
+    uint64_t ist2;
+    uint64_t ist3;
+    uint64_t ist4;
+    uint64_t ist5;
+    uint64_t ist6;
+    uint64_t ist7;
+    uint64_t reserved3;
+    uint32_t reserved4;
+    uint32_t iopbOffset;
+} __attribute__((packed)) tss_t;
+
 
 [[gnu::aligned(0x1000)]] GDTable defaultGdt
 {
@@ -71,7 +81,7 @@ struct [[gnu::packed]] TSS
 };
 
 GDTDescriptor descriptor;
-TSS tss[256]; // Max number of CPUs supported
+tss_t tss[256]; // Max number of CPUs supported
 
 void GDT::Init()
 {
@@ -88,6 +98,7 @@ void GDT::Init()
 	defaultGdt.Tss.base2 = base >> 24;
 	defaultGdt.Tss.base3 = base >> 32;
 	defaultGdt.Tss.reserved = 0x00;
+	defaultGdt.Tss.length = limit;
 
 	asm volatile("lgdt %0" :: "m"(descriptor) : "memory");
 	asm volatile("ltr %0" :: "r"(static_cast<uint16_t>(GDT_TSS)));
@@ -112,4 +123,10 @@ void GDT::LoadGDT(int cpunum)
 	asm volatile("ltr %0" :: "r"(static_cast<uint16_t>(GDT_TSS)));
 
 	reloadSegments();
+}
+
+void GDT::SetKernelStack(uint64_t stack)
+{
+	tss[0].rsp0 = stack;
+	cpus[0].stack = stack;
 }

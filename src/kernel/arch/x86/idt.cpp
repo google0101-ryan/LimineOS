@@ -74,14 +74,40 @@ static const char* exceptions[] =
 
 static IDT::inthandler_t handlers[256];
 
+static inline unsigned long read_cr2(void)
+{
+    unsigned long val;
+    asm volatile ( "mov %%cr2, %0" : "=r"(val) );
+    return val;
+}
+
+struct StackTrace
+{
+	StackTrace* next;
+	uint64_t rip;
+};
+
 extern "C" void IntHandler(IDT::stackframe_t* regs)
 {
 	if (regs->int_num < 32)
 	{
 		Terminal::SetScreenColors(0xFF0000, 0x00000000);
 		printf("Exception %d!\n", regs->int_num);
-		printf("%s exception encountered at 0x%x!\n", exceptions[regs->int_num], regs->rip);
+		printf("%s exception encountered at 0x%lx!\n", exceptions[regs->int_num], regs->rip);
 		printf("Error code: 0x%x\n", regs->err_code);
+
+		if (regs->int_num == 14)
+			printf("cr2: 0x%08x\n", read_cr2());
+
+		// StackTrace* trace;
+		// asm volatile("mov %%rbp,%0" : "=r"(trace) ::); 
+
+		// printf("Stack trace:\n");
+		
+		// for (int i = 0; i < 0x10, trace; i++, trace = trace->next)
+		// {
+		// 	printf("0x%08lx\n", trace->rip);
+		// }
 
 		asm volatile("cli");
 		for (;;) asm volatile("hlt");

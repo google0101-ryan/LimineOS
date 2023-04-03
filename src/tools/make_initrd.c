@@ -55,6 +55,8 @@ int main(int argc, char** argv)
         hdr.pos = pos;
         hdr.size = size;
 
+        pos += size;
+
         fwrite(&hdr, sizeof(struct initrd_file_header), 1, out);
 
         fclose(f);

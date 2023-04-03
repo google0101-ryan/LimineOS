@@ -18,6 +18,9 @@ Thread::Thread(uint64_t entry, bool is_user)
 	next = nullptr;
 
 	state = State::Ready;
+
+	kernelStackBase = new uint8_t[524288];
+	kernelStack = (uint8_t*)kernelStackBase + 524488;
 }
 
 IDT::stackframe_t* Thread::GetStackFrame()

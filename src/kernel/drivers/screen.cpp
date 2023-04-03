@@ -115,6 +115,16 @@ void Terminal::ClearScreen()
 	ssfn_dst.x = ssfn_dst.y = 0;
 }
 
+void Terminal::Log(const char *msg)
+{
+	while (*msg)
+	{
+		while (is_transmit_empty() == 0);
+
+		outb(PORT, *msg++);
+	}
+}
+
 void Terminal::Init(limine_framebuffer_response *term)
 {
 	mutex_init(&screen_mutex);

@@ -10,4 +10,6 @@ void Init();
 
 void LoadGDT(int cpunum);
 
+void SetKernelStack(uint64_t stack);
+
 }

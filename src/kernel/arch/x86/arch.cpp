@@ -13,6 +13,7 @@
 #include <kernel/arch/x86/acpi/acpi.h>
 #include <kernel/arch/x86/cpu.h>
 #include <kernel/arch/x86/scheduler/scheduler.h>
+#include <kernel/arch/x86/syscalls/syscall.h>
 
 static volatile limine_memmap_request mmap_req = 
 {
@@ -56,6 +57,11 @@ extern void KThread();
 
 void Arch::Init()
 {
+	uint64_t low = 0, high = 0;
+	asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0xC0000080));
+    low |= 1 << 11;
+    asm volatile("rdmsr" :: "a"(low), "d"(high), "c"(0xC0000080));
+
 	GDT::Init();
 
 	Terminal::SetScreenColors(0x00FF00, 0x000000);
@@ -67,6 +73,10 @@ void Arch::Init()
 	Terminal::SetScreenColors(0x00FF00, 0x000000);
 
 	printf("[x]: Loaded IDT\n");
+
+	Syscall::Init();
+
+	printf("[x]: Initialized syscalls\n");
 
 	if (!mmap_req.response)
 	{

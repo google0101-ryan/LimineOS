@@ -36,7 +36,7 @@ private:
 		Filesystem* fs;
 	};
 
-	List<Mountpoint> mountpoints;
+	vector<Mountpoint> mountpoints;
 	HashMap<int, Filesystem*> descriptors;
 
 	VFS() {}
@@ -45,8 +45,10 @@ public:
 
 	VFS(VFS&) = delete;
     VFS& operator=(VFS&) = delete;
+
+	int LoadAndExec(const char* path);
 	
-	void mount(Filesystem* fs, const char* mountpoint);
+	void mount(Filesystem* fs, const char* mountpoint, bool root);
 
     int open(const char* path);
     void close(int fd);
@@ -56,4 +58,4 @@ public:
     size_t tell(int fd);
 };
 
-static VFS* vfs;
+extern VFS* vfs;

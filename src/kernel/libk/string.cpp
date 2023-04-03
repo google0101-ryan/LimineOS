@@ -8,6 +8,15 @@ void memset(void *a, int c, size_t size)
 		dst[i] = c;
 }
 
+void memcpy(void *a, void *b, size_t size)
+{
+    char* dst = (char*)a;
+    char* src = (char*)b;
+
+    for (size_t i = 0; i < size; i++)
+        dst[i] = src[i];
+}
+
 int strncmp( const char * s1, const char * s2, size_t n )
 {
     while ( n && *s1 && ( *s1 == *s2 ) )

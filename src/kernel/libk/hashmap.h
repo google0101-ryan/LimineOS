@@ -1,5 +1,7 @@
 #pragma once
 
+#include <kernel/libk/string.h>
+
 #define TABLE_SIZE 512
 
 template<typename K, typename V>
@@ -55,6 +57,8 @@ public:
 	HashMap()
 	{
 		table = new HashNode<K, V>*[TABLE_SIZE]();
+		for (int i = 0; i < TABLE_SIZE; i++)
+			table[i] = nullptr;
 	}
 
 	~HashMap()

@@ -19,6 +19,8 @@ public:
 
 	IDT::stackframe_t savedRegs;
 	VirtualMemory::PageMapLevel4* addressSpace;
+	void* kernelStack;
+	void* kernelStackBase;
 private:
 	State state;
 

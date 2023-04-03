@@ -20,6 +20,8 @@ Initrd::Initrd()
 {
 	strncpyz(name, "initrd", 6);
 
+	open_files = HashMap<int, FileDescriptor>();
+
 	printf("Initializing initrd\n");
 	limine_file* initrd;
 
@@ -46,6 +48,10 @@ Initrd::Initrd()
 
 	printf("Initrd is at 0x%lx, contains %d files\n", (uint64_t)hdr, hdr->num_files);
 
+	startOfFiles = ((char*)hdr + sizeof(initrd_header)) + (sizeof(initrd_file_header) * hdr->num_files);
+
+	printf("%p\n", startOfFiles);
+
 	headers = (initrd_file_header*)((char*)hdr + sizeof(initrd_header));
 
 	printf("/\n");
@@ -54,8 +60,6 @@ Initrd::Initrd()
 	{
 		printf("|--- %s\n", headers[i].name);
 	}
-
-	startOfFiles = ((char*)hdr + sizeof(initrd_header)) + (sizeof(initrd_file_header) * hdr->num_files);
 }
 
 int Initrd::open(const char *name)
@@ -114,8 +118,8 @@ int Initrd::read(int fd, char *buf, size_t size)
 	
 	INITRD_GET_INFO();
 
-	char* pos = (char*)startOfFiles + fileDescriptor.hdr->pos + fileDescriptor.pos;
-
+	char* pos = (char*)hdr + fileDescriptor.hdr->pos + fileDescriptor.pos;
+	
 	size_t realSize = MIN(size, fileDescriptor.hdr->size);
 
 	for (size_t i = 0; i < realSize; i++)
@@ -136,13 +140,15 @@ int Initrd::seek(int fd, int seek_dir, size_t off)
 	case SEEK_SET:
 		fileDescriptor.pos = off;
 		break;
-	case SEEK_CUR:
-		fileDescriptor.pos += off;
-		break;
 	case SEEK_END:
 		fileDescriptor.pos = fileDescriptor.hdr->size - off;
 		break;
+	case SEEK_CUR:
+		fileDescriptor.pos += off;
+		break;
 	}
+
+	open_files.put(fd, fileDescriptor);
 
 	return 0;
 }

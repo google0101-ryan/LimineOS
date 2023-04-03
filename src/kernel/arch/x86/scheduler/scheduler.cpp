@@ -2,6 +2,7 @@
 #include <kernel/arch/x86/util/spinlock.h>
 #include <kernel/arch/x86/driver/apic.h>
 #include <kernel/arch/x86/cpu.h>
+#include <kernel/arch/x86/gdt.h>
 
 static mutex_t sched_mutex;
 
@@ -48,6 +49,27 @@ Thread *Scheduler::AddThread(uint64_t entrypoint, bool user)
 	mutex_unlock(&sched_mutex);
 
 	return ret;
+}
+
+void Scheduler::RegisterThread(Thread *thread)
+{
+	mutex_lock(&sched_mutex);
+
+	if (!thread_queue.head)
+		thread_queue.head = thread;
+	
+	if (thread_queue.tail)
+		thread_queue.tail->next = thread;
+	thread_queue.tail = thread;
+
+	thread_queue.num_threads++;
+
+	mutex_unlock(&sched_mutex);
+}
+
+Thread *Scheduler::GetCurrentThread()
+{
+	return thread_queue.current;
 }
 
 bool firsttime = true;
@@ -113,6 +135,8 @@ void Scheduler::Schedule(IDT::stackframe_t* regs)
 		return;
 
 	next_thread->SetState(Thread::Running);
+	
+	GDT::SetKernelStack((uint64_t)next_thread->kernelStack);
 
 	lapic.EOI();
 

@@ -22,6 +22,9 @@ void GetWidthHeight(int& w, int& h);
 
 void ClearScreen();
 
+// Logs to serial only
+void Log(const char* msg);
+
 }
 
 #define printf Terminal::printf

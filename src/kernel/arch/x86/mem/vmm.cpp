@@ -35,11 +35,11 @@ static volatile limine_hhdm_request hhdm_req =
 
 void VirtualMemory::MapPage(PageMapLevel4* pml4, uint64_t physaddr, uint64_t virtaddr, uint64_t flags)
 {
-	uint64_t xd = flags & (1 << 63);
-	flags &= 0xFF;
+	uint64_t xd = flags & (1ULL << 63);
+	flags &= 0xfff;
 
-	physaddr &= ~0xFFF;
-	virtaddr &= ~0xFFF;
+	physaddr &= 0xfffffffff000;
+	virtaddr &= ~0xfff;
 
 	uint64_t pml4index = (virtaddr >> 39) & 0x1FF;
 	uint64_t dirptrindex = (virtaddr >> 30) & 0x1FF;
@@ -47,17 +47,17 @@ void VirtualMemory::MapPage(PageMapLevel4* pml4, uint64_t physaddr, uint64_t vir
 	uint64_t tableindex = (virtaddr >> 12) & 0x1FF;
 
 	// We mark it RW, User, and present. PTEs will take care of specifics
-	if (!pml4->entries[pml4index]) pml4->entries[pml4index] = ((uint64_t)PMM::AllocPage(1)) | flags::present | flags::writeable | flags::user;
+	if (!pml4->entries[pml4index]) pml4->entries[pml4index] = ((uint64_t)PMM::AllocPage(1) & ~0xfff) | flags::present | flags::writeable | flags::user;
 
 	PageDirectoryPointerTable* pdpt = (PageDirectoryPointerTable*)((uint64_t)pml4->entries[pml4index] & ~0xFFF);
 
-	if (!pdpt->entries[dirptrindex]) pdpt->entries[dirptrindex] = ((uint64_t)PMM::AllocPage(1)) | flags::present | flags::writeable | flags::user;
+	if (!pdpt->entries[dirptrindex]) pdpt->entries[dirptrindex] = ((uint64_t)PMM::AllocPage(1) & ~0xfff) | flags::present | flags::writeable | flags::user;
 
 	PageDirectory* pd = (PageDirectory*)((uint64_t)pdpt->entries[dirptrindex] & ~0xFFF);
 
-	if (!pd->entries[dirindex]) pd->entries[dirindex] = ((uint64_t)PMM::AllocPage(1)) | flags::present | flags::writeable | flags::user;
+	if (!pd->entries[dirindex]) pd->entries[dirindex] = ((uint64_t)PMM::AllocPage(1) & ~0xfff) | flags::present | flags::writeable | flags::user;
 
-	PageTable* pt = (PageTable*)((uint64_t)pd->entries[dirindex] & ~0xFFF);;
+	PageTable* pt = (PageTable*)((uint64_t)pd->entries[dirindex] & ~0xFFF);
 	
 	pt->entries[tableindex] = physaddr | flags | xd;
 }
@@ -77,13 +77,24 @@ VirtualMemory::PageMapLevel4 *VirtualMemory::AllocateAddressSpace(uint64_t &stac
 	for (uint64_t i = 0; i < file_req.response->kernel_file->size; i += 0x1000)
 		MapPage(pml4, addr_req.response->physical_base+i, addr_req.response->virtual_base+i, flags::writeable | flags::present);	
 
-	uint64_t stack_addr = ((uint64_t)PMM::AllocPage(ALIGN(stack_size, 0x1000) / 0x1000)) + hhdm_req.response->offset;
-	stack = stack_addr + stack_size;
+	uint64_t stack_addr = ((uint64_t)PMM::AllocPage(ALIGN(stack_size, 0x1000) / 0x1000));
+	stack = 0xffff900000000000 + stack_size;
 
 	for (uint64_t i = 0; i < ALIGN(stack_size, 0x1000); i += 0x1000)
-		MapPage(pml4, stack_addr+i, 0xffff900000000000+i, flags::user | flags::writeable | flags::present | flags::executedisable);
+		MapPage(pml4, stack_addr+i, 0xffff900000000000+i, flags::user | flags::writeable | flags::present);
 	
 	return pml4;
+}
+
+void VirtualMemory::SwitchPageMap(PageMapLevel4 *pml4)
+{
+	asm volatile("mov %0, %%cr3" :: "r"(pml4) : "memory");
+}
+
+void VirtualMemory::SwitchToPagemap(int cpunum)
+{
+	auto kernel_table = cpus[cpunum].top_lvl;
+	SwitchPageMap(kernel_table);
 }
 
 void VirtualMemory::Init(int cpunum)
