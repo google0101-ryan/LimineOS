@@ -1,89 +1,56 @@
-# Nuke built-in rules and variables.
-override MAKEFLAGS += -rR
+ODIR=build
 
-override IMAGE_NAME := os
+CXX=g++
+CXXFLAGS=-std=gnu++20 \
+-ffreestanding \
+-fno-builtin \
+-fno-stack-protector \
+-fno-stack-check \
+-fno-omit-frame-pointer \
+-fno-lto \
+-fno-PIE \
+-fno-PIC \
+-m64 \
+-march=x86-64 \
+-mabi=sysv \
+-mno-red-zone \
+-mcmodel=kernel \
+-fno-rtti \
+-fno-exceptions \
+-Isrc \
+-I. \
+-I.. \
+-nostdlib \
+-Wall \
+-Wextra \
+-no-pie \
+-g \
+-O0 -pipe -Wno-unused-parameter -Wno-register \
+-mno-80387 \
+-mno-sse \
+-mno-sse2 \
+-mno-avx \
+-mno-avx2
 
-.PHONY: all
-all: $(IMAGE_NAME).iso
+SOURCES := $(shell find src -type f -name *.cpp)
+SOURCES_ASM := $(shell find src -type f -name *.asm)
+OBJS = $(patsubst src/%,$(ODIR)/%,$(SOURCES:.cpp=.o))
+OBJS += $(patsubst src/%,$(ODIR)/%,$(SOURCES_ASM:.asm=.o))
 
-.PHONY: all-hdd
-all-hdd: $(IMAGE_NAME).hdd
+$(ODIR)/%.o: src/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) -c -o $@ $< $(CXXFLAGS)
 
-.PHONY: run
-run: $(IMAGE_NAME).iso
-	qemu-system-x86_64 -M q35 -m 2G -cdrom $(IMAGE_NAME).iso -boot d -no-reboot -no-shutdown -serial stdio
+$(ODIR)/%.o: src/%.asm
+	@mkdir -p $(dir $@)
+	nasm -felf64 $< -o $@
 
-.PHONY: run-debug
-run-debug: $(IMAGE_NAME).iso
-	qemu-system-x86_64 -M q35 -m 2G -cdrom $(IMAGE_NAME).iso -boot d -no-reboot -no-shutdown -serial stdio -d int
+kernel: $(OBJS)
+	$(CXX) -T scripts/link.ld -o kernel.elf $(CXXFLAGS) $(OBJS)
+	mv kernel.elf hdd_root
 
-.PHONY: run-uefi
-run-uefi: ovmf $(IMAGE_NAME).iso
-	qemu-system-x86_64 -M q35 -m 2G -bios ovmf/OVMF.fd -cdrom $(IMAGE_NAME).iso -boot d
-
-.PHONY: run-hdd
-run-hdd: $(IMAGE_NAME).hdd
-	qemu-system-x86_64 -M q35 -m 2G -hda $(IMAGE_NAME).hdd
-
-.PHONY: run-hdd-uefi
-run-hdd-uefi: ovmf $(IMAGE_NAME).hdd
-	qemu-system-x86_64 -M q35 -m 2G -bios ovmf/OVMF.fd -hda $(IMAGE_NAME).hdd
-
-ovmf:
-	mkdir -p ovmf
-	cd ovmf && curl -Lo OVMF-X64.zip https://efi.akeo.ie/OVMF/OVMF-X64.zip && unzip OVMF-X64.zip
-
-.PHONY: dep
-dep: limine
-
-limine:
-	git clone https://github.com/limine-bootloader/limine.git --branch=v4.x-branch-binary --depth=1
-	$(MAKE) -C limine
-
-.PHONY: kernel
-kernel:
-	$(MAKE) -C src/kernel
-
-$(IMAGE_NAME).iso: limine kernel
-	rm -rf iso_root
-	mkdir -p iso_root
-	cp src/kernel/kernel.elf \
-		limine.cfg limine/limine.sys limine/limine-cd.bin limine/limine-cd-efi.bin initrd.img iso_root/
-	xorriso -as mkisofs -b limine-cd.bin \
-		-no-emul-boot -boot-load-size 4 -boot-info-table \
-		--efi-boot limine-cd-efi.bin \
-		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o $(IMAGE_NAME).iso
-	limine/limine-deploy $(IMAGE_NAME).iso
-	rm -rf iso_root
-	make -C src/kernel clean
-
-$(IMAGE_NAME).hdd: limine kernel
-	rm -f $(IMAGE_NAME).hdd
-	dd if=/dev/zero bs=1M count=0 seek=64 of=$(IMAGE_NAME).hdd
-	parted -s $(IMAGE_NAME).hdd mklabel gpt
-	parted -s $(IMAGE_NAME).hdd mkpart ESP fat32 2048s 100%
-	parted -s $(IMAGE_NAME).hdd set 1 esp on
-	limine/limine-deploy $(IMAGE_NAME).hdd
-	sudo losetup -Pf --show $(IMAGE_NAME).hdd >loopback_dev
-	sudo mkfs.fat -F 32 `cat loopback_dev`p1
-	mkdir -p img_mount
-	sudo mount `cat loopback_dev`p1 img_mount
-	sudo mkdir -p img_mount/EFI/BOOT
-	sudo cp -v kernel/kernel.elf limine.cfg limine/limine.sys img_mount/
-	sudo cp -v limine/BOOTX64.EFI img_mount/EFI/BOOT/
-	sudo cp -v initrd.img img_mount/
-	sync
-	sudo umount img_mount
-	sudo losetup -d `cat loopback_dev`
-	rm -rf loopback_dev img_mount
-
-.PHONY: clean
 clean:
-	rm -rf iso_root $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
-	$(MAKE) -C src/kernel clean
+	rm -rf $(OBJS)
 
-.PHONY: distclean
-distclean: clean
-	rm -rf limine ovmf
-	$(MAKE) -C src/kernel distclean
+run: kernel
+	qemu-system-x86_64 -bios OVMF.fd -serial stdio -d int -no-reboot -no-shutdown -drive file=fat:rw:hdd_root,format=raw,media=disk -m 2G -cpu qemu64,+avx,+avx2 -smp 4

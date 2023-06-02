@@ -1,64 +1,103 @@
-#include <stdint.h>
-#include <stddef.h>
-#include <kernel/limine.h>
+#include <include/limine.h>
+#include <include/util.h>
+#include <include/screen.h>
+#include <include/cpu/gdt.h>
+#include <include/cpu/idt.h>
+#include <include/cpu/features.h>
+#include <include/cpu/pic.h>
+#include <include/mm/pmm.h>
+#include <include/mm/vmm.h>
+#include <include/mm/liballoc.h>
+#include <include/dev/acpi.h>
+#include <include/cpu/spinlock.h>
+#include <include/dev/apic.h>
+#include <include/drivers/pata.h>
+#include <include/drivers/igpu.h>
 
-#ifdef ARCH_AMD64
-#include <kernel/arch/x86/arch.h>
-#endif
+#define KERNEL_VERSION "1.0.0"
+#define KERNEL_CODENAME "Hudson"
 
-#include <drivers/screen.h>
+uint8_t kernel_stack[0x4000];
 
-#include <kernel/vfs/vfs.h>
-#include <kernel/vfs/initrd.h>
-#include <kernel/vfs/rpc.h>
+uint64_t cpus_arrived = 1;
+spinlock cpu_lock;
 
-static volatile limine_framebuffer_request fb_req =
+void start_ap(limine_smp_info* info)
 {
-	.id = LIMINE_FRAMEBUFFER_REQUEST,
-	.response = nullptr
-};
+    GDT::SetupGdt(info->processor_id);
 
-void KThread()
-{
-	Terminal::SetScreenColors(0xFFFFFFFF, 0x00000000);
+    VirtualMemory::SwapToKernelPT();
 
-	Terminal::ClearScreen();
+    printf("Started processor %d\n", info->processor_id);
 
-	printf("Entered kernel thread\n");
+    cpu_lock.lock();
+    cpus_arrived++;
+    cpu_lock.unlock();
 
-	VFS::Init();
-
-	printf("Initialized VFS\n");
-
-	Initrd* initrd = new Initrd();
-
-	vfs->mount(initrd, "/", true);
-
-	RpcFilesystem* rpc = new RpcFilesystem();
-
-	vfs->mount(rpc, "/rpc", false);
-
-	int res = vfs->LoadAndExec("/hello_world.elf");
-
-	if (res < 0)
-	{
-		// printf("Unhandled result %d\n", res);
-		Arch::Halt();
-	}
-
-	Arch::Halt();
+    Utils::HaltCatchFire();
 }
 
-extern "C" void _start()
+volatile limine_smp_request smp_req = 
 {
-	if (fb_req.response->framebuffer_count < 1)
-		Arch::Halt();
+    .id = LIMINE_SMP_REQUEST,
+    .revision = 0,
+    .response = nullptr,
+    .flags = 0
+};
 
-	Terminal::Init(fb_req.response);
+extern "C" void kernel_entry [[gnu::noreturn]]()
+{
+    Screen::Initialize();
 
-	// This will take us into multitasking
-	// We resume execution after this function in KThread()
-	Arch::Init();
+    printf("Succesfully initialized framebuffer, early printf enabled, output redirected to com0\n");
+    printf("Kernel version %s (%s)\n", KERNEL_VERSION, KERNEL_CODENAME);
 
-	Arch::Halt();
+    IDT::Initialize();
+
+    printf("IDT setup done...         \t\t\t\t[OK]\n");
+
+    PIC::RemapAndDisable();
+
+    printf("Remapped PIC interrupts (0 -> 32)\n");
+
+    printf("Initializing physical memory\n");
+
+    PhysicalMemory::Initialize();
+
+    GDT::SetupGdt(0);
+
+    printf("GDT setup done...         \t\t\t\t[OK]\n");
+
+    printf("Initializing virtual memory\n");
+
+    VirtualMemory::Initialize();
+
+    printf("Parsing ACPI tables\n");
+
+    ACPI::ParseTables();
+
+    printf("Initializing APIC\n");
+
+    LAPIC::Initialize();
+    IOAPIC::Initialize();
+
+    printf("Starting all cpus\n");
+
+    for (uint64_t i = 0; i < smp_req.response->cpu_count; i++)
+    {
+        auto& cpu = smp_req.response->cpus[i];
+
+        if (cpu->lapic_id == smp_req.response->bsp_lapic_id) continue;
+
+        cpu->goto_address = start_ap;
+    }
+
+    while (cpus_arrived < smp_req.response->cpu_count)
+        __builtin_ia32_pause();
+
+    printf("All CPUs arrived\n");
+
+    IntelGpu::Initialize();
+
+    Utils::HaltCatchFire();
 }
