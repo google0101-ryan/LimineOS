@@ -21,26 +21,13 @@ struct RSDP
     uint32_t rsdt_addr;
 };
 
-struct [[gnu::packed]] SDTHdr
-{
-    char sig[4];
-    uint32_t len;
-    uint8_t rev;
-    uint8_t checksum;
-    char oem_id[6];
-    char oem_table_id[8];
-    uint32_t oem_revision;
-    uint32_t creator_id;
-    uint32_t creator_rev;
-};
-
 struct RSDT
 {
     SDTHdr hdr;
     uint32_t sdts[];
 } *rsdt;
 
-void* FindTable(const char* sig)
+void* ACPI::FindTable(const char* sig)
 {
     for (size_t i = 0; i < (rsdt->hdr.len - sizeof(SDTHdr)) / 4; i++)
     {
@@ -62,7 +49,7 @@ size_t numGSIs = 0;
 
 void ParseAPIC()
 {
-    uint64_t addr = (uint64_t)FindTable("APIC");
+    uint64_t addr = (uint64_t)ACPI::FindTable("APIC");
     SDTHdr* madt = (SDTHdr*)addr;
 
     if (!madt)

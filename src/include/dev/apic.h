@@ -6,9 +6,12 @@ namespace LAPIC
 {
 
 void Initialize();
+void InitTimer(bool is_bsp = false); // Initialize LAPIC timer to interrupt us at a fixed rate
 
-void WriteReg(uint8_t index, uint32_t val);
-uint32_t ReadReg(uint8_t index);
+void WriteReg(uint32_t index, uint32_t val);
+uint32_t ReadReg(uint32_t index);
+
+void EOI();
 
 }
 

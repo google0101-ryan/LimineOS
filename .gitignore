@@ -4,3 +4,7 @@ dump
 .vscode
 hdd_root/kernel.elf
 build
+tools/file
+tools/hello.txt
+tools/initrd.img
+tools/make_initrd

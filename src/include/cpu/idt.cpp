@@ -8,6 +8,12 @@ static volatile IDT::IDTR idtr;
 
 extern "C" void* isr_table[256];
 
+struct StackFrame
+{
+    StackFrame* rbp;
+    uint64_t rip;
+};
+
 void SetIDTEntry(int i, uint64_t entry, uint8_t ist, uint16_t sel, uint8_t gate_type, uint8_t dpl)
 {
     idt[i].offset0 = entry & 0xffff;
@@ -54,6 +60,11 @@ const char *interrupt_exception_name[] = {
     "invalid (30)",
     "invalid (31)"};
 
+idt_handler_t handlers[256] =
+{
+    nullptr
+};
+
 extern "C" SavedRegs* interrupt_handler(SavedRegs* regs)
 {
     if (regs->int_no < 32)
@@ -64,11 +75,28 @@ extern "C" SavedRegs* interrupt_handler(SavedRegs* regs)
         printf("r8  0x%x r9  0x%x r10 0x%x r11 0x%x\n", regs->r8, regs->r9, regs->r10, regs->r11);
         printf("r12 0x%x r13 0x%x r14 0x%x r15 0x%x\n", regs->r12, regs->r13, regs->r14, regs->r15);
         printf("Exception occured at 0x%x, error code %d\n", regs->rip, regs->error_code);
+        if (regs->int_no == 0x0e)
+            printf("cr2 0x%x\n", Utils::ReadCr2());
+        
+        printf("Stack trace:\n");
+        StackFrame* stck;
+        asm("movq %%rbp,%0" : "=r"(stck) ::);
+        for (unsigned int frame = 0; stck && frame < 10; ++frame)
+        {
+            printf("\t0x%x\n", stck->rip);
+            stck = stck->rbp;
+        }
 
         Utils::HaltCatchFire();
     }
 
-    return regs;
+    if (!handlers[regs->int_no])
+    {
+        printf("ERROR: Unhandled interrupt %d!\n", regs->int_no);
+        Utils::HaltCatchFire();
+    }
+
+    return handlers[regs->int_no](regs);
 }
 
 extern "C" void LoadIdt(uint64_t idtr);
@@ -84,4 +112,9 @@ void IDT::Initialize()
     LoadIdt((uint64_t)&idtr);
 
     asm volatile("sti"); // Please don't triple fault
+}
+
+void IDT::AddHandler(int no, idt_handler_t handler)
+{
+    handlers[no] = handler;
 }

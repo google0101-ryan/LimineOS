@@ -13,6 +13,10 @@
 #include <include/dev/apic.h>
 #include <include/drivers/pata.h>
 #include <include/drivers/igpu.h>
+#include <include/cpu/cpu.h>
+#include <include/sched/scheduler.h>
+#include <include/drivers/hpet.h>
+#include <include/fs/vfs.h>
 
 #define KERNEL_VERSION "1.0.0"
 #define KERNEL_CODENAME "Hudson"
@@ -24,17 +28,24 @@ spinlock cpu_lock;
 
 void start_ap(limine_smp_info* info)
 {
+    cpu_lock.lock();
     GDT::SetupGdt(info->processor_id);
+    IDT::Initialize();
 
     VirtualMemory::SwapToKernelPT();
 
+    Utils::wrmsr(0xC0000102, (uint64_t)&cpus[info->processor_id]);
+    cpus[info->processor_id].processor_id = info->processor_id;
+
     printf("Started processor %d\n", info->processor_id);
 
-    cpu_lock.lock();
+    LAPIC::Initialize();
+    LAPIC::InitTimer(true);
+
     cpus_arrived++;
     cpu_lock.unlock();
 
-    Utils::HaltCatchFire();
+    Utils::Halt();
 }
 
 volatile limine_smp_request smp_req = 
@@ -44,6 +55,18 @@ volatile limine_smp_request smp_req =
     .response = nullptr,
     .flags = 0
 };
+
+void BspKernelThread()
+{
+    printf("Entered BSP kernel thread\n");
+
+    printf("Initializing VFS...\n");
+
+    VFS::Initialize();
+
+    for (;;)
+        asm volatile("hlt");
+}
 
 extern "C" void kernel_entry [[gnu::noreturn]]()
 {
@@ -81,13 +104,32 @@ extern "C" void kernel_entry [[gnu::noreturn]]()
     LAPIC::Initialize();
     IOAPIC::Initialize();
 
+    printf("Initializing scheduler\n");
+
+    Scheduler::Initialize();
+
+    Scheduler::AddThread((uint64_t)BspKernelThread, false); // Make sure BSP has at least one thread in its queue
+
+    HPET::SetupHPET(); // We use the HPET to initialize all LAPIC timers
+
+    asm volatile("cli");
+
+    LAPIC::InitTimer();
+
+    printf("System init done.\n");
+
     printf("Starting all cpus\n");
 
     for (uint64_t i = 0; i < smp_req.response->cpu_count; i++)
     {
         auto& cpu = smp_req.response->cpus[i];
 
-        if (cpu->lapic_id == smp_req.response->bsp_lapic_id) continue;
+        if (cpu->lapic_id == smp_req.response->bsp_lapic_id)
+        { 
+            cpus[cpu->processor_id].processor_id = cpu->processor_id;
+            Utils::wrmsr(0xC0000102, (uint64_t)&cpus[cpu->processor_id]);
+            continue;
+        }
 
         cpu->goto_address = start_ap;
     }
@@ -97,7 +139,8 @@ extern "C" void kernel_entry [[gnu::noreturn]]()
 
     printf("All CPUs arrived\n");
 
-    IntelGpu::Initialize();
+    asm volatile("sti");
 
-    Utils::HaltCatchFire();
+    for (;;)
+        asm volatile("hlt");
 }

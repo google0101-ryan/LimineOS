@@ -1,0 +1,50 @@
+g++ -c -o build/sched/task.o src/sched/task.cpp -std=gnu++20 -ffreestanding -fno-builtin -fno-stack-protector -fno-stack-check -fno-omit-frame-pointer -fno-lto -fno-PIE -fno-PIC -m64 -march=x86-64 -mabi=sysv -mno-red-zone -mcmodel=kernel -fno-rtti -fno-exceptions -Isrc -I. -I.. -nostdlib -Wall -Wextra -no-pie -g -O0 -pipe -Wno-unused-parameter -Wno-register -mno-80387 -mno-sse -mno-sse2 -mno-avx -mno-avx2
+g++ -T scripts/link.ld -o kernel.elf -std=gnu++20 -ffreestanding -fno-builtin -fno-stack-protector -fno-stack-check -fno-omit-frame-pointer -fno-lto -fno-PIE -fno-PIC -m64 -march=x86-64 -mabi=sysv -mno-red-zone -mcmodel=kernel -fno-rtti -fno-exceptions -Isrc -I. -I.. -nostdlib -Wall -Wextra -no-pie -g -O0 -pipe -Wno-unused-parameter -Wno-register -mno-80387 -mno-sse -mno-sse2 -mno-avx -mno-avx2 build/mm/liballoc.o build/mm/pmm.o build/mm/vmm.o build/include/drivers/pata.o build/include/drivers/igpu.o build/include/cpu/idt.o build/include/cpu/pic.o build/drivers/Screen.o build/drivers/hpet.o build/sched/scheduler.o build/sched/task.o build/cpu/cpu.o build/cpu/features.o build/cpu/gdt.o build/dev/acpi.o build/dev/apic.o build/kernel/kernel.o build/include/misc.o build/cpu/idt_asm.o build/cpu/gdt_asm.o
+mv kernel.elf hdd_root
+qemu-system-x86_64 \
+	-drive if=pflash,format=raw,file=OVMF_CODE.fd -drive if=pflash,format=raw,file=OVMF_VARS.fd -serial stdio -d int -no-reboot -no-shutdown \
+	-drive file=fat:rw:hdd_root,format=raw,media=disk -m 2G -cpu qemu64,+avx,+avx2 -smp 4 -M q35 -vga vmware
+[2J[01;01H[=3h[2J[01;01HBdsDxe: failed to load Boot0001 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0): Not Found
+BdsDxe: loading Boot0002 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+BdsDxe: starting Boot0002 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+[2J[01;01H[01;01H[2J[01;01H[01;01HFramebuffer is at 0xffff8000c0000000, 1280x800
+Framebuffer initialized...				[OK]
+No EDID detected
+Succesfully initialized framebuffer, early printf enabled, output redirected to com0
+Kernel version 1.0.0 (Hudson)
+IDT setup done...         				[OK]
+Remapped PIC interrupts (0 -> 32)
+Initializing physical memory
+34 entries present in memory map
+2040MiBs of usable memory found (bitmap is 65536 bytes, at 0xffff800000002000)
+TSS kernel stack is now at 0xffff800000012000
+GDT setup done...         				[OK]
+Initializing virtual memory
+Kernel page directory is at 0x16000
+Kernel is 0x7fe1d000 -> 0x7fe3c2b8, vaddr 0xffffffff80000000 -> 0xffffffff8001f2b8
+Found framebuffer at physaddr 0xc0000000
+Parsing ACPI tables
+RSDP is at 0xffff80007fb7e014
+Initializing APIC
+IOAPIC redirect 0 -> 2
+IOAPIC redirect 5 -> 5
+IOAPIC redirect 9 -> 9
+IOAPIC redirect 10 -> 10
+IOAPIC redirect 11 -> 11
+Initializing scheduler
+Stack is at 0xffff800000988000
+HPET is at 0xfed00000
+LAPIC timer initialized
+System init done.
+Starting all cpus
+TSS kernel stack is now at 0xffff800011194000
+Started processor 1
+LAPIC timer initialized
+TSS kernel stack is now at 0xffff800011198000
+Started processor 2
+LAPIC timer initialized
+TSS kernel stack is now at 0xffff80001119c000
+Started processor 3
+LAPIC timer initialized
+All CPUs arrived
+Entered BSP kernel thread

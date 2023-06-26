@@ -2,6 +2,9 @@
 #include <include/util.h>
 #include <include/limine.h>
 #include <include/dev/acpi.h>
+#include <include/drivers/hpet.h>
+#include <include/cpu/idt.h>
+#include <include/sched/scheduler.h>
 
 extern uint64_t lapic_addr;
 
@@ -14,14 +17,49 @@ void LAPIC::Initialize()
     WriteReg(0xF0, 0x1FF); // Enable LAPIC, set spurious vector to 255
 }
 
-void LAPIC::WriteReg(uint8_t index, uint32_t val)
+SavedRegs* HandleTick(SavedRegs* r)
 {
-    *(uint32_t*)(lapic_addr + hhdm_req.response->offset + index) = val;
+    Scheduler::Schedule(r);
+    LAPIC::EOI();
+    return r;
 }
 
-uint32_t LAPIC::ReadReg(uint8_t index)
+void LAPIC::InitTimer(bool is_bsp)
 {
-    return *(uint32_t *)(lapic_addr + hhdm_req.response->offset + index);
+    WriteReg(0x3E0, 0x3);
+    WriteReg(0x380, 0xFFFFFFFF);
+
+    msleep(10);
+
+    WriteReg(0x320, 0x10000);
+
+    uint32_t ticksIn10ms = 0xFFFFFFFF - ReadReg(0x390);
+
+    WriteReg(0x320, 0x20020);
+    WriteReg(0x3E0, 0x3);
+    WriteReg(0x380, ticksIn10ms);
+
+    if (is_bsp)
+        IDT::AddHandler(32, HandleTick);
+
+    printf("LAPIC timer initialized\n");
+
+    // IOAPIC::WriteReg()
+}
+
+void LAPIC::WriteReg(uint32_t index, uint32_t val)
+{
+    *(volatile uint32_t*)(lapic_addr + hhdm_req.response->offset + index) = val;
+}
+
+uint32_t LAPIC::ReadReg(uint32_t index)
+{
+    return *(volatile uint32_t *)(lapic_addr + hhdm_req.response->offset + index);
+}
+
+void LAPIC::EOI()
+{
+    WriteReg(0xB0, 0);
 }
 
 uint32_t IOAPIC::ReadReg(uint32_t index)

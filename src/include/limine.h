@@ -488,6 +488,8 @@ struct limine_dtb_request {
     LIMINE_PTR(struct limine_dtb_response *) response;
 };
 
+extern limine_hhdm_request hhdm_req;
+
 #ifdef __cplusplus
 }
 #endif

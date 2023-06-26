@@ -53,4 +53,6 @@ clean:
 	rm -rf $(OBJS)
 
 run: kernel
-	qemu-system-x86_64 -bios OVMF.fd -serial stdio -d int -no-reboot -no-shutdown -drive file=fat:rw:hdd_root,format=raw,media=disk -m 2G -cpu qemu64,+avx,+avx2 -smp 4
+	qemu-system-x86_64 \
+		-drive if=pflash,format=raw,file=OVMF_CODE.fd -drive if=pflash,format=raw,file=OVMF_VARS.fd -serial stdio -d int -no-reboot -no-shutdown \
+		-drive file=fat:rw:hdd_root,format=raw,media=disk -m 2G -cpu qemu64,+avx,+avx2 -smp 4 -M q35 -vga vmware

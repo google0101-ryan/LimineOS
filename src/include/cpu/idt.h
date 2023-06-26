@@ -11,6 +11,8 @@ struct SavedRegs
     uint64_t rip, cs, rflags, rsp, ss;
 };
 
+typedef SavedRegs* (*idt_handler_t)(SavedRegs*);
+
 namespace IDT
 {
 
@@ -32,5 +34,7 @@ struct [[gnu::packed]] IDTR
 };
 
 void Initialize();
+
+void AddHandler(int no, idt_handler_t handler);
 
 }

@@ -5,11 +5,15 @@
 #include <include/screen.h>
 #include <include/mm/pmm.h>
 #include <include/mm/vmm.h>
+#include <include/limine.h>
+
+extern limine_hhdm_request hhdm_req;
 
 using namespace Utils;
 
 #define PCI_DEVICE_GPU 0, 2, 0
 #define IGFX_IO_VADDR 0xffffc00000000000
+#define IGFX_STOLENMEM_VADDR 0xffffc00000400000
 #define DISPLAY_COUNT 3
 
 uint16_t ReadPciRegister16(int bus, int device, int func, uint8_t offs)
@@ -42,10 +46,16 @@ void WritePciRegister32(int bus, int device, int func, uint8_t offs, uint32_t da
 }
 
 volatile uint32_t* iobase;
+volatile uint32_t* gttAddr;
 
 inline void WriteIgpu32(uint32_t reg, uint32_t data)
 {
     iobase[reg / 4] = data;
+}
+
+inline void WriteIgpu64(uint32_t reg, uint64_t data)
+{
+    *(uint64_t*)&iobase[reg / 4] = data;
 }
 
 uint32_t ReadIgpu32(uint32_t reg)
@@ -62,15 +72,164 @@ struct DisplayInfo
     uint32_t max_backlight_val;
 };
 
-uint64_t GetStolenMemSize(uint32_t size_code)
+static const uint32_t GMS_TO_SIZE[] =
 {
-    switch (size_code)
+      0 * 1024*1024,     // GMS_0MB
+     32 * 1024*1024,     // GMS_32MB_1
+     64 * 1024*1024,     // GMS_64MB_1
+     96 * 1024*1024,     // GMS_96MB_1
+    128 * 1024*1024,     // GMS_128MB_1
+     32 * 1024*1024,     // GMS_32MB
+     48 * 1024*1024,     // GMS_48MB
+     64 * 1024*1024,     // GMS_64MB
+    128 * 1024*1024,     // GMS_128MB
+    256 * 1024*1024,     // GMS_256MB
+     96 * 1024*1024,     // GMS_96MB
+    160 * 1024*1024,     // GMS_160MB
+    224 * 1024*1024,     // GMS_224MB
+    352 * 1024*1024,     // GMS_352MB
+    448 * 1024*1024,     // GMS_448MB
+    480 * 1024*1024,     // GMS_480MB
+    512 * 1024*1024,     // GMS_512MB
+};
+
+uint32_t stolenMemSize, stolenMemBase;
+uint32_t gttMemSize, gttEntryCount, gttMappableEntries;
+uint64_t arpertureBar;
+
+static void PciReadBar(int bus, int device, int func, int index, uint32_t* address, uint32_t* mask)
+{
+    uint32_t reg = 0x10 + index * sizeof(uint32_t);
+
+    *address = ReadPciRegister32(bus, device, func, reg);
+    WritePciRegister32(bus, device, func, reg, 0xffffffff);
+    *mask = ReadPciRegister32(bus, device, func, reg);
+
+    WritePciRegister32(bus, device, func, reg, *address);
+}
+
+struct PciBar
+{
+    uint64_t base, size;
+    bool is_io;
+};
+
+void PciGetBar(PciBar* bar, int bus, int dev, int func, int index)
+{
+    uint32_t addressLow;
+    uint32_t maskLow;
+    PciReadBar(bus, dev, func, index, &addressLow, &maskLow);
+
+    if (addressLow & 0x04)
     {
-    case 0x01:
-        return 32*1024*1024;
-    case 0x02:
-        return 64*1024*1024;
+        uint32_t addressHigh;
+        uint32_t maskHigh;
+        PciReadBar(bus, dev, func, index+1, &addressHigh, &maskHigh);
+
+        bar->base = ((uintptr_t)addressHigh << 32) | (addressLow & ~0xf);
+        bar->size = ~(((uint64_t)maskHigh << 32) | (maskLow & ~0xf)) + 1;
+        bar->is_io = false;
     }
+    else if (addressLow & 1)
+    {
+        bar->base = (uint16_t)(addressLow & ~3);
+        bar->size = (uint16_t)(~(maskLow & ~0x3) + 1);
+        bar->is_io = true;
+    }
+    else
+    {
+        bar->base = (addressLow & ~0xf);
+        bar->size = ~(maskLow & ~0xf) + 1;
+        bar->is_io = false;
+    }
+}
+
+struct GfxObject
+{
+    uint8_t* cpuAddr;
+    uint64_t gfxAddr;
+};
+
+struct GfxMemRange
+{
+    uint64_t base;
+    uint64_t top;
+    uint64_t current;
+};
+
+struct GfxMemManager
+{
+    GfxMemRange vram;
+    GfxMemRange shared;
+    GfxMemRange private_;
+
+    uint8_t* gfxMemBase;
+    uint8_t* gfxMemNext;
+} mem_manager;
+
+void GfxInitMemManager()
+{
+    mem_manager.vram.base = 0;
+    mem_manager.vram.current = 0;
+    mem_manager.vram.top = stolenMemSize;
+
+    mem_manager.shared.base = stolenMemSize;
+    mem_manager.shared.current = mem_manager.shared.base;
+    mem_manager.shared.top = gttMappableEntries << 12;
+
+    mem_manager.private_.base = gttMappableEntries << 12;
+    mem_manager.private_.current = mem_manager.private_.base;
+    mem_manager.private_.top = ((uint64_t)gttMappableEntries) << 12;
+
+    for (uint8_t fenceNum = 0; fenceNum < 16; fenceNum++)
+    {
+        WriteIgpu64(0x100000 + fenceNum * sizeof(uint64_t), 0);
+    }
+
+    mem_manager.gfxMemBase = (uint8_t*)(arpertureBar + 0x400800 + hhdm_req.response->offset); // Avoid overwriting our 1366x768 32BPP framebuffer at the base of our shared memory
+    mem_manager.gfxMemNext = mem_manager.gfxMemBase + 4 * (1 << 12);
+}
+
+bool GfxAlloc(GfxObject* obj, uint32_t size, uint32_t align)
+{
+    uint8_t* cpuAddr = mem_manager.gfxMemNext;
+    uintptr_t offset = (uintptr_t)cpuAddr & (align - 1);
+    if (offset)
+    {
+        cpuAddr += align - offset;
+    }
+
+    mem_manager.gfxMemNext = cpuAddr + size;
+    obj->cpuAddr = cpuAddr;
+    obj->gfxAddr = cpuAddr - mem_manager.gfxMemBase;
+    return true;
+}
+
+void EnterForceWake()
+{
+    int trys = 0;
+    int forceWakeAck;
+    do
+    {
+        ++trys;
+        forceWakeAck = ReadIgpu32(0x130040) & 1;
+    } while (forceWakeAck != 0 && trys < 10);
+
+    WriteIgpu32(0xA188, (1 << 16) | 1);
+    ReadIgpu32(0xA180);
+
+    do
+    {
+        ++trys;
+        forceWakeAck = ReadIgpu32(0x130040) & 1;
+        printf("Waiting for force ack to be set: Try=%d - Ack=0x%x\n", trys, forceWakeAck);
+    } while (forceWakeAck == 0);
+}
+
+void ExitForceWake()
+{
+    WriteIgpu32(0xA188, (1 << 16));
+    ReadIgpu32(0xA180);
 }
 
 void IntelGpu::Initialize()
@@ -88,6 +247,7 @@ void IntelGpu::Initialize()
     printf("I/O base is at physical address 0x%x\n", ReadPciRegister64(PCI_DEVICE_GPU, 0x10));
 
     iobase = (uint32_t*)IGFX_IO_VADDR;
+    gttAddr = (uint32_t*)(IGFX_IO_VADDR+(2*1024*1024));
 
     bool is_lvds_connected = ReadIgpu32(LVDS_CTL) & (1 << 1);
 
@@ -123,4 +283,74 @@ void IntelGpu::Initialize()
     WriteIgpu32(BLC_PWM_DATA, display.max_backlight_val / 2);
 
     printf("Backlight brightness set\n");
+
+    uint16_t ggc = ReadPciRegister16(PCI_DEVICE_GPU, 0x50);
+    uint32_t bdsm = ReadPciRegister32(PCI_DEVICE_GPU, 0x5C);
+
+    uint32_t gms = (ggc >> 3) & 0x1F;
+    stolenMemSize = GMS_TO_SIZE[gms];
+
+    uint32_t ggms = (ggc >> 8) & 0x3;
+
+    switch (ggms)
+    {
+    case 0:
+        gttMemSize = 0;
+        break;
+    case 1:
+        gttMemSize = 1*1024*1024;
+        break;
+    case 2:
+        gttMemSize = 2*1024*1024;
+        break;
+    default:
+        gttMemSize = -1;
+        break;
+    }
+
+    PciBar aperture;
+    PciGetBar(&aperture, PCI_DEVICE_GPU, 2);
+    arpertureBar = aperture.base;
+
+    printf("GMADR: 0x%x (%u MB)\n", aperture.base, aperture.size / (1024*1024));
+
+    stolenMemBase = bdsm & 0xFFF00000;
+
+    gttEntryCount = gttMemSize / sizeof(uint32_t);
+    gttMappableEntries = aperture.size >> 12;
+    
+    printf("GTT Config:\n");
+    printf("\tStolen mem base:      0x%x\n", stolenMemBase);
+    printf("\tStolen mem size:      0x%x\n", stolenMemSize);
+    printf("\tGTT mem size:         0x%x\n", gttMemSize);
+    printf("\tGTT total entries:    0x%x\n", gttEntryCount);
+    printf("\tGTT mappable entries: 0x%x\n", gttMappableEntries);
+
+    GfxInitMemManager();
+
+    GfxObject ringbuffer;
+    GfxAlloc(&ringbuffer, 4*1024, 4*1024);
+
+    uint8_t* ringTail = ringbuffer.cpuAddr;
+    memset(ringbuffer.cpuAddr, 0, 4*1024);
+
+    EnterForceWake();
+    WriteIgpu32(RCS_RINGBUF_BUFFER_TAIL, 0);
+    WriteIgpu32(RCS_RINGBUF_BUFFER_HEAD, 0);
+    WriteIgpu32(RCS_RINGBUF_BUFFER_START, ringbuffer.gfxAddr);
+    WriteIgpu32(RCS_RINGBUF_BUFFER_CTRL, 1);
+    ExitForceWake();
+
+    uint32_t* cmdBuf = (uint32_t*)ringbuffer.cpuAddr;
+    *cmdBuf++ = MI_INSTR(0, 0) | (1 << 22) | 0xBEEF;
+    *cmdBuf++ = MI_INSTR(0, 0);
+
+    ringTail = (uint8_t*)cmdBuf;
+    uint32_t tailIndex = ringTail - ringbuffer.cpuAddr;
+
+    EnterForceWake();
+    WriteIgpu32(RCS_RINGBUF_BUFFER_TAIL, tailIndex);
+    ExitForceWake();
+
+    printf("0x%x\n", ReadIgpu32(NOPID));
 }
