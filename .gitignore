@@ -9,3 +9,8 @@ tools/hello.txt
 tools/initrd.img
 tools/make_initrd
 disasm
+file
+log
+OVMF_CODE.fd
+OVMF_VARS.fd
+OVMF.fd

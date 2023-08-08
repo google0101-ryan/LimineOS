@@ -12,4 +12,5 @@ public:
     virtual ssize_t read(int fd, void* buf, size_t count);
     virtual int close(int fd);
     virtual off_t lseek(int fd, off_t offset, int whence);
+    virtual off_t tell(int fd);
 };

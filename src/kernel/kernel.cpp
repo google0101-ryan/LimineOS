@@ -40,7 +40,7 @@ void start_ap(limine_smp_info* info)
     printf("Started processor %d\n", info->processor_id);
 
     LAPIC::Initialize();
-    LAPIC::InitTimer(true);
+    LAPIC::InitTimer(false);
 
     cpus_arrived++;
     cpu_lock.unlock();
@@ -114,7 +114,7 @@ extern "C" void kernel_entry [[gnu::noreturn]]()
 
     asm volatile("cli");
 
-    LAPIC::InitTimer();
+    LAPIC::InitTimer(true);
 
     printf("System init done.\n");
 
@@ -131,11 +131,11 @@ extern "C" void kernel_entry [[gnu::noreturn]]()
             continue;
         }
 
-        cpu->goto_address = start_ap;
+        // cpu->goto_address = start_ap;
     }
 
-    while (cpus_arrived < smp_req.response->cpu_count)
-        __builtin_ia32_pause();
+    // while (cpus_arrived < smp_req.response->cpu_count)
+    //     __builtin_ia32_pause();
 
     printf("All CPUs arrived\n");
 

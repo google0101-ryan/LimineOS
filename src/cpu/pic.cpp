@@ -1,4 +1,4 @@
-#include "pic.h"
+#include <include/cpu/pic.h>
 
 void PIC::RemapAndDisable()
 {

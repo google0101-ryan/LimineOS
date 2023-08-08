@@ -197,7 +197,7 @@ int vprintf(const char* format, va_list args)
             }
             case 'd':
             {
-                int c = va_arg(args, int);
+                int64_t c = va_arg(args, long);
                 puts(itoa(c, 10));
                 break;
             }

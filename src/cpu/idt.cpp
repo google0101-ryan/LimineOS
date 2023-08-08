@@ -1,4 +1,4 @@
-#include "idt.h"
+#include <include/cpu/idt.h>
 
 #include <include/screen.h>
 #include <include/util.h>
@@ -78,14 +78,14 @@ extern "C" SavedRegs* interrupt_handler(SavedRegs* regs)
         if (regs->int_no == 0x0e)
             printf("cr2 0x%x\n", Utils::ReadCr2());
         
-        printf("Stack trace:\n");
-        StackFrame* stck;
-        asm("movq %%rbp,%0" : "=r"(stck) ::);
-        for (unsigned int frame = 0; stck && frame < 10; ++frame)
-        {
-            printf("\t0x%x\n", stck->rip);
-            stck = stck->rbp;
-        }
+        // printf("Stack trace:\n");
+        // StackFrame* stck;
+        // asm("movq %%rbp,%0" : "=r"(stck) ::);
+        // for (unsigned int frame = 0; stck && frame < 10; ++frame)
+        // {
+        //     printf("\t0x%x\n", stck->rip);
+        //     stck = stck->rbp;
+        // }
 
         Utils::HaltCatchFire();
     }

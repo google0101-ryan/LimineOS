@@ -4,6 +4,7 @@
 #include <include/util.h>
 #include <include/limine.h>
 #include <include/screen.h>
+#include "initrd.h"
 
 static int cur_fd = 0;
 
@@ -26,7 +27,7 @@ struct FileInfo
     uint8_t* data;
     uint32_t size;
     char name[64];
-    size_t cur_pos;
+    off_t cur_pos;
 };
 
 struct [[gnu::packed]] FileHeader
@@ -103,11 +104,34 @@ Initrd::Initrd(const char *mountpoint)
         printf("ERROR: unable to open /hello.text\n");
         Utils::HaltCatchFire();
     }
+
+    lseek(fd, 0, SEEK_END);
+    size_t size = tell(fd);
+    lseek(fd, 0, SEEK_SET);
+
+    printf("File /hello.txt is %d bytes\n", size);
+
+    close(fd);
+    int err = lseek(fd, 0, SEEK_END);
+
+    if (err != -1)
+    {
+        printf("LSEEK on closed file succeeded!\n");
+        Utils::HaltCatchFire();
+    }
+
+    fd = open("/fakefile.txt", "rw");
+
+    if (fd != -1)
+    {
+        printf("OPEN on non-existant file succeeded!\n");
+        Utils::HaltCatchFire();
+    }
 }
 
 int Initrd::open(const char *path, const char *permissions)
 {
-    path = strremove(path, GetMountpoint());
+    path++;
     FileInfo* info = nullptr;
 
     printf("Relative path: %s\n", path);
@@ -150,7 +174,14 @@ ssize_t Initrd::read(int fd, void *buf, size_t count)
 int Initrd::close(int fd)
 {
     cur_fd--;
+
+    FileInfo* dummy;
+    if (!open_files.get(fd, dummy))
+        return -1;
+
     open_files.remove(fd);
+
+    return 0;
 }
 
 off_t Initrd::lseek(int fd, off_t offset, int whence)
@@ -173,5 +204,13 @@ off_t Initrd::lseek(int fd, off_t offset, int whence)
         break;
     }
 
+    return info->cur_pos;
+}
+off_t Initrd::tell(int fd)
+{
+    FileInfo* info;
+    if (!open_files.get(fd, info))
+        return -1;
+    
     return info->cur_pos;
 }
