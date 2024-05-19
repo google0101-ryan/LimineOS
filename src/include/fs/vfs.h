@@ -36,4 +36,10 @@ void Initialize();
 
 void mount(Filesystem* fs);
 
+int open(const char* path, const char* mode);
+ssize_t read(int fd, void* buf, size_t count);
+int close(int fd);
+off_t lseek(int fd, off_t offset, int whence);
+off_t tell(int fd);
+
 }

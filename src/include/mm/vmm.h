@@ -45,5 +45,7 @@ void SwapToKernelPT();
 void SwapToPageTable(PML4Table* page);
 
 void MapPage(PML4Table* root, uint64_t vaddr, uint64_t paddr, uint64_t flags);
+PML4Table* GetCurrentPML4();
+void SetCurrentPML4(PML4Table* table);
 
 }

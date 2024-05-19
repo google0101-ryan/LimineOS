@@ -16,6 +16,13 @@ using namespace Utils;
 #define IGFX_STOLENMEM_VADDR 0xffffc00000400000
 #define DISPLAY_COUNT 3
 
+#define RCS_HWS_PGA                     0x04080
+#define HWS_PGA(id) 					(RCS_HWS_PGA + ((id) << 8))
+#define RING_BUFFER_TAIL(id)			(RCS_RINGBUF_BUFFER_TAIL + ((id) << 8))
+#define RING_BUFFER_HEAD(id)			(RCS_RINGBUF_BUFFER_HEAD + ((id) << 8))
+#define RING_BUFFER_START(id)			(RCS_RINGBUF_BUFFER_START + ((id) << 8))
+#define RING_BUFFER_CTL(id)				(RCS_RINGBUF_BUFFER_CTRL + ((id) << 8))
+
 uint16_t ReadPciRegister16(int bus, int device, int func, uint8_t offs)
 {
     outd(0xCF8, 0x80000000 | (bus << 16) | (device << 11) | (func << 8) | offs);
@@ -167,6 +174,22 @@ struct GfxMemManager
     uint8_t* gfxMemNext;
 } mem_manager;
 
+enum GfxRingId
+{
+	RING_RCS,
+	RING_VCS,
+	RING_BCS,
+	RING_COUNT,
+};
+
+struct GfxRing
+{
+	GfxRingId id;
+	GfxObject cmdStream;
+	GfxObject statusPage;
+	uint8_t* tail;
+} csRing;
+
 void GfxInitMemManager()
 {
     mem_manager.vram.base = 0;
@@ -231,6 +254,8 @@ void ExitForceWake()
     WriteIgpu32(0xA188, (1 << 16));
     ReadIgpu32(0xA180);
 }
+
+GfxObject surface, cursor, renderContext;
 
 void IntelGpu::Initialize()
 {
@@ -327,30 +352,51 @@ void IntelGpu::Initialize()
     printf("\tGTT mappable entries: 0x%x\n", gttMappableEntries);
 
     GfxInitMemManager();
+	
+	// Disable VGA mode
+	outb(0x3c4, 0x01);
+	outb(0x3c5, inb(0x3c5) | (1 << 5));
+	WriteIgpu32(0x41000, (1 << 31));
 
-    GfxObject ringbuffer;
-    GfxAlloc(&ringbuffer, 4*1024, 4*1024);
+	printf("VGA plane disabled\n");
 
-    uint8_t* ringTail = ringbuffer.cpuAddr;
-    memset(ringbuffer.cpuAddr, 0, 4*1024);
+	uint32_t surfaceSize = 16 * 1024 * 1024;
+	GfxAlloc(&surface, surfaceSize, 0x40000);
+	memset(surface.cpuAddr, 0x77, 720*400*4);
 
-    EnterForceWake();
-    WriteIgpu32(RCS_RINGBUF_BUFFER_TAIL, 0);
-    WriteIgpu32(RCS_RINGBUF_BUFFER_HEAD, 0);
-    WriteIgpu32(RCS_RINGBUF_BUFFER_START, ringbuffer.gfxAddr);
-    WriteIgpu32(RCS_RINGBUF_BUFFER_CTRL, 1);
-    ExitForceWake();
+	uint32_t cursorSize = 64*64*sizeof(uint32_t) + 8 * 1024;
+	GfxAlloc(&cursor, cursorSize, 64*1024);
 
-    uint32_t* cmdBuf = (uint32_t*)ringbuffer.cpuAddr;
-    *cmdBuf++ = MI_INSTR(0, 0) | (1 << 22) | 0xBEEF;
-    *cmdBuf++ = MI_INSTR(0, 0);
+	uint32_t csMemSize = 4*1024;
+	GfxAlloc(&csRing.cmdStream, csMemSize, 4*1024);
+	GfxAlloc(&csRing.statusPage, csMemSize, 4*1024);
 
-    ringTail = (uint8_t*)cmdBuf;
-    uint32_t tailIndex = ringTail - ringbuffer.cpuAddr;
+	csRing.id = RING_RCS;
+	csRing.tail = csRing.cmdStream.cpuAddr;
+	memset(csRing.statusPage.cpuAddr, 0, 4*1024);
 
-    EnterForceWake();
-    WriteIgpu32(RCS_RINGBUF_BUFFER_TAIL, tailIndex);
-    ExitForceWake();
+	GfxAlloc(&renderContext, 4*1024, 4*1024);
 
-    printf("0x%x\n", ReadIgpu32(NOPID));
+	EnterForceWake();
+	{
+		WriteIgpu32(HWS_PGA(csRing.id), csRing.statusPage.gfxAddr);
+		WriteIgpu32(RING_BUFFER_TAIL(csRing.id), 0);
+		WriteIgpu32(RING_BUFFER_HEAD(csRing.id), 0);
+		WriteIgpu32(RING_BUFFER_START(csRing.id), csRing.cmdStream.gfxAddr);
+		WriteIgpu32(RING_BUFFER_CTL(csRing.id), (0 << 12) | 1);
+	}
+	ExitForceWake();
+
+	uint32_t* cmd = (uint32_t*)csRing.tail;
+	*cmd++ = MI_INSTR(0x00, 0) | (1 << 22) | 0xaa55;
+	csRing.tail = (uint8_t*)cmd;
+	uint32_t tailIndex = (csRing.tail - csRing.cmdStream.cpuAddr);
+
+	EnterForceWake();
+	{
+		WriteIgpu32(RING_BUFFER_TAIL(csRing.id), tailIndex);
+	}
+	ExitForceWake();
+
+	printf("0x%08x\n", ReadIgpu32(NOPID));
 }

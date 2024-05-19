@@ -27,7 +27,7 @@ limine_kernel_file_request kernel_file =
 
 extern limine_memmap_request mmap_req;
 
-PML4Table* VirtualMemory::kernelDir;
+PML4Table* VirtualMemory::kernelDir, *currentDir;
 
 void VirtualMemory::MapPage(PML4Table* root, uint64_t vaddr, uint64_t paddr, uint64_t flags)
 {
@@ -73,6 +73,16 @@ void VirtualMemory::MapPage(PML4Table* root, uint64_t vaddr, uint64_t paddr, uin
     pt->pte[tableindex] = paddr | flags;
 }
 
+PML4Table *VirtualMemory::GetCurrentPML4()
+{
+	return currentDir;
+}
+
+void VirtualMemory::SetCurrentPML4(PML4Table *table)
+{
+	currentDir = table;
+}
+
 void VirtualMemory::Initialize()
 {
     kernelDir = (PML4Table*)PhysicalMemory::alloc(sizeof(PML4Table)/4096);
@@ -86,9 +96,11 @@ void VirtualMemory::Initialize()
     for (size_t i = 0; i < kernel_file.response->kernel_file->size; i += 4096)
         MapPage(kernelDir, kernel_addr.response->virtual_base+i, kernel_addr.response->physical_base+i, PageFlags::present | PageFlags::readwrite);
     
-    // Map the low 4GiBs at 0xffffffff80000000 or so
+    // Map the low 4GiBs at 0xffffffff80000000 or so, and identity-map it
     for (size_t i = 0; i < 0x100000000; i += 4096)
+    {
         MapPage(kernelDir, i+hhdm_req.response->offset, i, PageFlags::present | PageFlags::readwrite);
+    }
 
     auto mmap = mmap_req.response->entries;
     uint64_t phyAddr = 0;
@@ -125,5 +137,6 @@ void VirtualMemory::SwapToKernelPT()
 
 void VirtualMemory::SwapToPageTable(PML4Table * page)
 {
+	currentDir = page;
     asm volatile("mov %0, %%cr3" ::"r"(page));
 }

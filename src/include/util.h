@@ -26,18 +26,18 @@ memset (void *dest, int val, size_t len)
 static inline int
 strncmp(const char *s1, const char *s2, size_t n)
 {
-  unsigned char u1, u2;
+    unsigned char u1, u2;
 
-  while (n-- > 0)
+    while (n-- > 0)
     {
-      u1 = (unsigned char) *s1++;
-      u2 = (unsigned char) *s2++;
-      if (u1 != u2)
-	return u1 - u2;
-      if (u1 == '\0')
-	return 0;
+        u1 = (unsigned char) *s1++;
+        u2 = (unsigned char) *s2++;
+        if (u1 == '\0' || u2 == '\0')
+	        return 0;
+        if (u1 != u2)
+	        return u1 - u2;
     }
-  return 0;
+    return 0;
 }
 
 static inline int
@@ -49,17 +49,17 @@ strcmp(const char *s1, const char *s2)
     {
         u1 = (unsigned char) *s1++;
         u2 = (unsigned char) *s2++;
+        if (u1 == '\0' || u2 == '\0')
+	        return 0;
         if (u1 != u2)
 	        return u1 - u2;
-        if (u1 == '\0')
-	        return 0;
     }
     return 0;
 }
 
 static inline size_t strlen(const char* str)
 {
-    size_t i;
+    size_t i = 0;
     while (*str++)
         i++;
     return i;

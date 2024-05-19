@@ -19,6 +19,8 @@ struct CPU
     GDT::TSS* tss;
     TaskQueue task_queue;
     int processor_id;
+    void* kstack, *kstack_phys;
+    void* scratch;
 };
 
 extern CPU cpus[256];

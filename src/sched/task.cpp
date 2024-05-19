@@ -2,6 +2,7 @@
 #include <include/util.h>
 #include <include/mm/pmm.h>
 #include <include/limine.h>
+#include <include/cpu/cpu.h>
 
 extern limine_kernel_file_request kernel_file;
 extern limine_kernel_address_request kernel_addr;
@@ -51,11 +52,21 @@ Thread::Thread(uint64_t entryPoint, bool is_user)
     for (size_t i = 0; i < len; i += 4096)
         VirtualMemory::MapPage(rootTable, reinterpret_cast<uint64_t>(Screen::GetFramebuffer())+i, phyAddr+i, PageFlags::present | PageFlags::readwrite);
     
-    for (size_t i = 0; i < DEFAULT_THREAD_STACK_SIZE; i += 4096)
+    for (size_t i = 0; i < ((DEFAULT_THREAD_STACK_SIZE+4096) & ~4096); i += 4096)
         VirtualMemory::MapPage(rootTable, 0xffffa00000000000+i, stackAddr+i, PageFlags::present | PageFlags::readwrite | PageFlags::user);
     // Map the low 4GiBs at 0xffffffff80000000 or so
     for (size_t i = 0; i < 0x100000000; i += 4096)
         VirtualMemory::MapPage(rootTable, i+hhdm_req.response->offset, i, PageFlags::present | PageFlags::readwrite);
     
+    for (size_t i = 0; i < (16*1024)+4096; i += 4096)
+        VirtualMemory::MapPage(rootTable, 0xffffd00000000000+i, ((uint64_t)GetCurCPU()->kstack_phys)+i, PageFlags::present | PageFlags::readwrite);
+
+    GetCurCPU()->kstack = (void*)0xffffd00000000000+(16*1024);
+
     next = nullptr;
+}
+
+void Thread::MapPage(void *phys, uint64_t virt, uint64_t flags)
+{
+    VirtualMemory::MapPage(rootTable, virt, (uint64_t)phys, flags);
 }

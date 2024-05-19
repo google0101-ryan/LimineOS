@@ -5,6 +5,7 @@
 #include <include/drivers/hpet.h>
 #include <include/cpu/idt.h>
 #include <include/sched/scheduler.h>
+#include <include/screen.h>
 
 extern uint64_t lapic_addr;
 

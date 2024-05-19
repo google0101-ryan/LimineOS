@@ -44,17 +44,26 @@ char* itoa(int64_t val, int base)
 {	
 	static char buf[64] = {0};
 	
-	int i = 62;
+	int i = 63;
 
     if (val == 0)
         return "0";
+    
+    bool isNegative = false;
+
+    if (val < 0)
+    {
+        isNegative = true;
+        val = -val;
+    }
 	
 	for(; val && i ; --i, val /= base)
-	
 		buf[i] = "0123456789abcdef"[val % base];
+    
+    if (isNegative)
+        buf[i--] = '-';
 	
 	return &buf[i+1];
-	
 }
 
 char* utoa(uint64_t val, int base)

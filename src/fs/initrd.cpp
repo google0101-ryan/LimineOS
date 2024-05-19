@@ -4,7 +4,6 @@
 #include <include/util.h>
 #include <include/limine.h>
 #include <include/screen.h>
-#include "initrd.h"
 
 static int cur_fd = 0;
 
@@ -79,8 +78,6 @@ Initrd::Initrd(const char *mountpoint)
 
     uint32_t fileCount = *(uint32_t*)initrd_module->address;
 
-    printf("%d files in initrd\n", fileCount);
-
     for (size_t i = 0; i < fileCount; i++)
     {
         FileHeader* hdr = (FileHeader*)(initrd_module->address+4+(i*sizeof(FileHeader)));
@@ -91,50 +88,12 @@ Initrd::Initrd(const char *mountpoint)
         info.size = hdr->size;
         files.push_back(info);
         hdr++;
-
-        char str[64] = {0};
-        memcpy(str, info.data, info.size);
-        printf("%s\n", str);
-    }
-
-    int fd = open("/hello.txt", "rb");
-
-    if (fd < 0)
-    {
-        printf("ERROR: unable to open /hello.text\n");
-        Utils::HaltCatchFire();
-    }
-
-    lseek(fd, 0, SEEK_END);
-    size_t size = tell(fd);
-    lseek(fd, 0, SEEK_SET);
-
-    printf("File /hello.txt is %d bytes\n", size);
-
-    close(fd);
-    int err = lseek(fd, 0, SEEK_END);
-
-    if (err != -1)
-    {
-        printf("LSEEK on closed file succeeded!\n");
-        Utils::HaltCatchFire();
-    }
-
-    fd = open("/fakefile.txt", "rw");
-
-    if (fd != -1)
-    {
-        printf("OPEN on non-existant file succeeded!\n");
-        Utils::HaltCatchFire();
     }
 }
 
 int Initrd::open(const char *path, const char *permissions)
 {
-    path++;
     FileInfo* info = nullptr;
-
-    printf("Relative path: %s\n", path);
 
     for (size_t i = 0; i < files.size(); i++)
     {
@@ -190,17 +149,16 @@ off_t Initrd::lseek(int fd, off_t offset, int whence)
     if (!open_files.get(fd, info))
         return -1;
 
-    size_t pos;
     switch (whence)
     {
     case SEEK_SET:
-        info->cur_pos = pos;
+        info->cur_pos = offset;
         break;
     case SEEK_CUR:
-        info->cur_pos += pos;
+        info->cur_pos += offset;
         break;
     case SEEK_END:
-        info->cur_pos = info->size + pos;
+        info->cur_pos = info->size - offset;
         break;
     }
 
@@ -211,6 +169,8 @@ off_t Initrd::tell(int fd)
     FileInfo* info;
     if (!open_files.get(fd, info))
         return -1;
+    
+    printf("%d\n", info->cur_pos);
     
     return info->cur_pos;
 }

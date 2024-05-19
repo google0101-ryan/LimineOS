@@ -9,5 +9,8 @@ public:
     static void Initialize();
 
     static Thread* AddThread(uint64_t entry, bool is_user = true);
+    static Thread* AddThread(Thread* t);
     static void Schedule(SavedRegs* regs);
+
+    static void DeleteCurThread();
 };

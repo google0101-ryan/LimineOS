@@ -16,7 +16,10 @@
 #include <include/cpu/cpu.h>
 #include <include/sched/scheduler.h>
 #include <include/drivers/hpet.h>
+#include <include/drivers/nvme.h>
 #include <include/fs/vfs.h>
+#include <include/fs/util.h>
+#include <include/cpu/Syscall.h>
 
 #define KERNEL_VERSION "1.0.0"
 #define KERNEL_CODENAME "Hudson"
@@ -29,15 +32,14 @@ spinlock cpu_lock;
 void start_ap(limine_smp_info* info)
 {
     cpu_lock.lock();
-    GDT::SetupGdt(info->processor_id);
+    GDT::SetupGdt(info->lapic_id);
     IDT::Initialize();
 
     VirtualMemory::SwapToKernelPT();
 
-    Utils::wrmsr(0xC0000102, (uint64_t)&cpus[info->processor_id]);
-    cpus[info->processor_id].processor_id = info->processor_id;
+    SysCalls::Init();
 
-    printf("Started processor %d\n", info->processor_id);
+    printf("Started processor %d\n", info->lapic_id);
 
     LAPIC::Initialize();
     LAPIC::InitTimer(false);
@@ -63,6 +65,14 @@ void BspKernelThread()
     printf("Initializing VFS...\n");
 
     VFS::Initialize();
+
+    printf("Initializing system calls...\n");
+
+    SysCalls::Init();
+
+    printf("%d\n", offsetof(CPU, scratch));
+
+	FSUtils::LoadAndExecuteElf("/test.elf");
 
     for (;;)
         asm volatile("hlt");
@@ -106,10 +116,12 @@ extern "C" void kernel_entry [[gnu::noreturn]]()
 
     printf("Initializing scheduler\n");
 
+    Utils::wrmsr(0xC0000102, (uint64_t)&cpus[smp_req.response->bsp_lapic_id]);
+
     Scheduler::Initialize();
 
     Scheduler::AddThread((uint64_t)BspKernelThread, false); // Make sure BSP has at least one thread in its queue
-
+    
     HPET::SetupHPET(); // We use the HPET to initialize all LAPIC timers
 
     asm volatile("cli");
@@ -124,12 +136,7 @@ extern "C" void kernel_entry [[gnu::noreturn]]()
     {
         auto& cpu = smp_req.response->cpus[i];
 
-        if (cpu->lapic_id == smp_req.response->bsp_lapic_id)
-        { 
-            cpus[cpu->processor_id].processor_id = cpu->processor_id;
-            Utils::wrmsr(0xC0000102, (uint64_t)&cpus[cpu->processor_id]);
-            continue;
-        }
+        cpus[cpu->lapic_id].processor_id = cpu->lapic_id;
 
         // cpu->goto_address = start_ap;
     }

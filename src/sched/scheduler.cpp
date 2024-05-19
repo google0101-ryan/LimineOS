@@ -4,6 +4,7 @@
 #include <include/cpu/spinlock.h>
 #include <include/screen.h>
 #include <include/dev/apic.h>
+#include <include/mm/pmm.h>
 
 extern limine_smp_request smp_req;
 spinlock sched_mutex;
@@ -27,39 +28,70 @@ Thread* Scheduler::AddThread(uint64_t entry, bool is_user)
     queue.tail = t;
 
     queue.num_threads++;
-    curCpuCore++;
+    // curCpuCore++;
 
-    if (curCpuCore == smp_req.response->cpu_count)
-        curCpuCore = 0;
+    // if (curCpuCore == smp_req.response->cpu_count)
+    //     curCpuCore = 0;
 
     sched_mutex.unlock();
 
     return t;
 }
 
-Thread* GetNextThread(uint64_t processor_id)
+Thread *Scheduler::AddThread(Thread *t)
+{
+    t->SetPID(curPid++);
+
+    auto& queue = cpus[curCpuCore].task_queue;
+
+    if (!queue.head)
+        queue.head = t;
+    
+    if (queue.tail)
+        queue.tail->next = t;
+    queue.tail = t;
+
+    queue.num_threads++;
+    // curCpuCore++;
+
+    // if (curCpuCore == smp_req.response->cpu_count)
+    //     curCpuCore = 0;
+
+    sched_mutex.unlock();
+
+    return t;
+}
+
+Thread *GetNextThread(uint64_t processor_id)
 {
     auto& queue = cpus[processor_id].task_queue;
 
     if (!queue.num_threads)
         return nullptr;
 
+    Thread* t;
+
     if (!queue.current)
     {
         queue.current = queue.head;
-        return queue.current;
+        t = queue.current;
     }
 
     if (queue.current->next)
     {
         queue.current = queue.current->next;
-        return queue.current;
+        t = queue.current;
     }
     else
     {
         queue.current = queue.head;
-        return queue.current;
+        t = queue.current;
     }
+
+    if (!t->CanRun())
+        return GetNextThread(processor_id);
+    
+    return t;
 }
 
 void Scheduler::Schedule(SavedRegs *regs)
@@ -79,6 +111,8 @@ void Scheduler::Schedule(SavedRegs *regs)
         return;
 
     LAPIC::EOI();
+
+	VirtualMemory::SetCurrentPML4(next_thread->rootTable);
 
     asm volatile(
 		R"(mov %0, %%rsp;
@@ -106,6 +140,12 @@ void Scheduler::Schedule(SavedRegs *regs)
 	);
 }
 
+void Scheduler::DeleteCurThread()
+{
+    auto& queue = cpus[GetCurCPU()->processor_id].task_queue;
+    queue.current->SetCanRun(false);
+}
+
 void Scheduler::Initialize()
 {
     sched_mutex.unlock();
@@ -119,5 +159,6 @@ void Scheduler::Initialize()
         cpus[id].task_queue.current = nullptr;
         cpus[id].task_queue.head = nullptr;
         cpus[id].task_queue.tail = nullptr;
+        cpus[id].kstack_phys = (void*)PhysicalMemory::alloc(4);
     }
 }
